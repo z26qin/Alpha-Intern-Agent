@@ -23,5 +23,10 @@ htmlcov/
 .idea/
 .DS_Store
 
+# Secrets
+.env
+.env.*
+!.env.example
+
 # Runtime data dir (default ALPHA_INTERN_DATA_DIR)
 .alpha_intern/

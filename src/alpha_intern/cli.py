@@ -6,6 +6,7 @@ later drive the same primitives directly through the `tools/` package.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -101,6 +102,73 @@ def memory_search(
         typer.echo(
             f"[{item.timestamp}] {item.id} {item.ticker or '-'} {item.title}"
         )
+
+
+@app.command("agent")
+def agent(
+    goal: str = typer.Argument(..., help="The research goal to investigate."),
+    max_steps: int = typer.Option(8, "--max-steps", help="Max planner steps before stopping."),
+    max_tokens: int = typer.Option(4096, "--max-tokens", help="Per-call max output tokens."),
+    model: Optional[str] = typer.Option(None, "--model", help="Anthropic model id."),
+    memory_query: Optional[str] = typer.Option(
+        None, "--memory-query", help="Override the memory-search query (defaults to goal)."
+    ),
+    memory_ticker: Optional[str] = typer.Option(
+        None, "--memory-ticker", help="Only include memories for this ticker."
+    ),
+    run_log_path: Optional[Path] = typer.Option(
+        None, "--run-log", help="Path to write the JSONL run log (default: data_dir/run.jsonl)."
+    ),
+) -> None:
+    """Run the LLM agent on a research goal. Requires ANTHROPIC_API_KEY."""
+    from alpha_intern.agent.loop import run_agent
+    from alpha_intern.agent.provider import DEFAULT_MODEL, AnthropicProvider
+    from alpha_intern.agent.run_log import RunLog
+    from alpha_intern.tools import Workspace, get_default_registry
+    from alpha_intern.tools.registry import ToolContext
+
+    settings = get_settings()
+    settings.ensure_dirs()
+
+    provider = AnthropicProvider(model=model or DEFAULT_MODEL)
+    registry = get_default_registry()
+
+    log_path = run_log_path or (settings.data_dir / "run.jsonl")
+    workspace = Workspace()
+    memory = ResearchMemoryStore(settings.memory_path)
+    skills = SkillRegistry(settings.skills_path)
+
+    with RunLog(log_path) as log:
+        ctx = ToolContext(
+            workspace=workspace,
+            memory=memory,
+            skills=skills,
+            run_log=log,
+        )
+        result = run_agent(
+            goal=goal,
+            provider=provider,
+            registry=registry,
+            ctx=ctx,
+            max_steps=max_steps,
+            max_tokens=max_tokens,
+            memory_query=memory_query,
+            memory_ticker=memory_ticker,
+        )
+
+    typer.echo("")
+    typer.echo(f"Run {result.run_id} — stopped: {result.stopped_reason}")
+    typer.echo(f"Steps used: {result.steps_used}, tool calls: {len(result.tool_calls)}")
+    if result.tool_calls:
+        typer.echo("Tools invoked:")
+        for tc in result.tool_calls:
+            status = "ok" if tc.get("ok") else f"ERROR ({tc.get('error')})"
+            typer.echo(f"  step {tc['step']}: {tc['tool']} — {status}")
+    if result.error:
+        typer.echo(f"Error: {result.error}")
+    typer.echo("")
+    typer.echo("Final message:")
+    typer.echo(result.final_text or "(no text)")
 
 
 if __name__ == "__main__":  # pragma: no cover
