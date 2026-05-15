@@ -34,6 +34,14 @@ class PredictSignalIn(ToolInput):
     input_artifact: str = Field(..., description="Workspace name of the feature DataFrame to score.")
     model_artifact: str = Field(..., description="Workspace name of a fitted AlphaSignalModel.")
     output_artifact: str = Field(..., description="Workspace name to store the signal DataFrame under.")
+    passthrough_columns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional columns to copy from the input frame into the signal frame "
+            "(e.g. the realized forward return) so the output can feed directly "
+            "into a rank backtest."
+        ),
+    )
 
 
 class PredictSignalOut(ToolOutput):
@@ -80,6 +88,15 @@ def register(registry: ToolRegistry) -> None:
                 f"Artifact {inp.model_artifact!r} is not an AlphaSignalModel"
             )
         preds = model.predict(df)
+        if inp.passthrough_columns:
+            missing = [c for c in inp.passthrough_columns if c not in df.columns]
+            if missing:
+                raise ToolError(
+                    f"predict_signal passthrough columns missing from input: {missing}"
+                )
+            preds = preds.copy()
+            for col in inp.passthrough_columns:
+                preds[col] = df[col].values
         ctx.workspace.put(inp.output_artifact, preds)
         return PredictSignalOut(
             output_artifact=inp.output_artifact,

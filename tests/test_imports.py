@@ -11,11 +11,18 @@ def test_top_level_import() -> None:
 
 def test_submodules_import() -> None:
     from alpha_intern import config  # noqa: F401
-    from alpha_intern.agent import context, loop, prompts, provider, run_log  # noqa: F401
+    from alpha_intern.agent import (  # noqa: F401
+        context,
+        loop,
+        prompts,
+        provider,
+        reflection,
+        run_log,
+    )
     from alpha_intern.backtest import metrics, walk_forward  # noqa: F401
     from alpha_intern.data import loader  # noqa: F401
     from alpha_intern.features import technical  # noqa: F401
-    from alpha_intern.memory import skills, store  # noqa: F401
+    from alpha_intern.memory import skill_runner, skills, store  # noqa: F401
     from alpha_intern.models import signal_model  # noqa: F401
     from alpha_intern import tools  # noqa: F401
     from alpha_intern.tools import registry, workspace  # noqa: F401

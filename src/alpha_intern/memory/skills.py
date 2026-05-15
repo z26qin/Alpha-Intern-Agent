@@ -10,13 +10,37 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+class ExecutableStep(BaseModel):
+    """One step of a runnable skill recipe.
+
+    `inputs` are passed to the registered tool named `tool`. Values may
+    be literals OR template strings:
+
+    - ``"$param.<name>"`` is replaced by ``params[name]`` at run time.
+    - ``"$step.<alias>.<field>"`` is replaced by the output value of a
+      previous step whose ``save_outputs_as`` equals ``alias``.
+
+    Nested dicts and lists are resolved recursively.
+    """
+
+    tool: str = Field(..., description="Registered tool name.")
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    save_outputs_as: Optional[str] = Field(
+        default=None,
+        description=(
+            "Alias to store this step's output under so later steps can "
+            "reference it via $step.<alias>.<field>."
+        ),
+    )
 
 
 class ResearchSkill(BaseModel):
@@ -28,8 +52,20 @@ class ResearchSkill(BaseModel):
     steps: list[str] = Field(default_factory=list)
     outputs: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    executable_steps: list[ExecutableStep] = Field(default_factory=list)
+    default_params: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=_now_iso)
     updated_at: str = Field(default_factory=_now_iso)
+
+
+_MOMENTUM_FEATURE_COLS = [
+    "return_1d",
+    "return_5d",
+    "return_20d",
+    "volatility_20d",
+    "moving_average_20d",
+    "volume_zscore_20d",
+]
 
 
 def _default_skills() -> list[ResearchSkill]:
@@ -50,6 +86,72 @@ def _default_skills() -> list[ResearchSkill]:
             ],
             outputs=["backtest_returns", "summary_metrics", "memory_note"],
             tags=["momentum", "cross_sectional", "signal"],
+            default_params={
+                "raw_prices": "prices_raw",
+                "top_quantile": 0.34,
+                "bottom_quantile": 0.34,
+                "cost_bps": 1.0,
+            },
+            executable_steps=[
+                ExecutableStep(
+                    tool="normalize_prices",
+                    inputs={
+                        "input_artifact": "$param.raw_prices",
+                        "output_artifact": "prices",
+                    },
+                    save_outputs_as="normalize",
+                ),
+                ExecutableStep(
+                    tool="build_features",
+                    inputs={
+                        "input_artifact": "prices",
+                        "output_artifact": "features",
+                    },
+                    save_outputs_as="features",
+                ),
+                ExecutableStep(
+                    tool="train_signal",
+                    inputs={
+                        "input_artifact": "features",
+                        "feature_columns": _MOMENTUM_FEATURE_COLS,
+                        "target_column": "target_return_5d_forward",
+                        "model_kind": "ridge",
+                        "model_artifact": "model",
+                    },
+                    save_outputs_as="train",
+                ),
+                ExecutableStep(
+                    tool="predict_signal",
+                    inputs={
+                        "input_artifact": "features",
+                        "model_artifact": "model",
+                        "output_artifact": "signal",
+                        "passthrough_columns": ["target_return_5d_forward"],
+                    },
+                    save_outputs_as="predict",
+                ),
+                ExecutableStep(
+                    tool="run_rank_backtest",
+                    inputs={
+                        "input_artifact": "signal",
+                        "signal_column": "signal",
+                        "forward_return_column": "target_return_5d_forward",
+                        "top_quantile": "$param.top_quantile",
+                        "bottom_quantile": "$param.bottom_quantile",
+                        "cost_bps": "$param.cost_bps",
+                        "output_artifact": "bt_returns",
+                    },
+                    save_outputs_as="backtest",
+                ),
+                ExecutableStep(
+                    tool="compute_metrics",
+                    inputs={
+                        "input_artifact": "bt_returns",
+                        "return_column": "net_return",
+                    },
+                    save_outputs_as="metrics",
+                ),
+            ],
         ),
         ResearchSkill(
             name="earnings_reaction_backtest",

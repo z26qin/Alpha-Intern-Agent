@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal, Optional
+
 from pydantic import Field
 
 from alpha_intern.backtest.metrics import (
@@ -10,7 +12,10 @@ from alpha_intern.backtest.metrics import (
     max_drawdown,
     sharpe_ratio,
 )
-from alpha_intern.backtest.walk_forward import run_simple_rank_backtest
+from alpha_intern.backtest.walk_forward import (
+    run_simple_rank_backtest,
+    run_walk_forward,
+)
 from alpha_intern.tools.registry import (
     ToolContext,
     ToolError,
@@ -33,6 +38,41 @@ class RunRankBacktestIn(ToolInput):
 class RunRankBacktestOut(ToolOutput):
     output_artifact: str
     n_periods: int
+
+
+class WalkForwardSignalIn(ToolInput):
+    input_artifact: str = Field(..., description="Workspace name of a feature DataFrame.")
+    feature_columns: list[str] = Field(..., description="Columns to use as features.")
+    target_column: str = Field(..., description="Forward-looking target column.")
+    output_artifact: str = Field(..., description="Workspace name to store the OOS signal DataFrame.")
+    mode: Literal["expanding", "rolling"] = Field(default="expanding")
+    train_lookback_days: int = Field(default=252, gt=0)
+    refit_every_days: int = Field(default=21, gt=0)
+    test_window_days: int = Field(default=21, gt=0)
+    min_train_size: int = Field(default=252, gt=0)
+    target_horizon_days: int = Field(
+        default=5,
+        gt=0,
+        description=(
+            "Number of periods of forward information baked into target_column. "
+            "Training rows whose targets would not have been observable by the "
+            "as-of date are dropped, preventing look-ahead leakage."
+        ),
+    )
+    model_kind: Literal["ridge", "random_forest"] = Field(default="ridge")
+    passthrough_columns: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Columns to carry over from the input frame to the signal frame. "
+            "Defaults to [target_column] so the output is rank-backtest-ready."
+        ),
+    )
+
+
+class WalkForwardSignalOut(ToolOutput):
+    output_artifact: str
+    n_rows: int
+    n_folds: int
 
 
 class ComputeMetricsIn(ToolInput):
@@ -72,6 +112,43 @@ def register(registry: ToolRegistry) -> None:
         return RunRankBacktestOut(
             output_artifact=inp.output_artifact,
             n_periods=int(len(returns)),
+        )
+
+    @registry.tool(
+        name="walk_forward_signal",
+        description=(
+            "Walk-forward: refit an AlphaSignalModel on rolling/expanding "
+            "training windows and emit out-of-sample signals. Output is "
+            "rank-backtest-ready when passthrough_columns includes the "
+            "realized forward return."
+        ),
+        input_model=WalkForwardSignalIn,
+        output_model=WalkForwardSignalOut,
+        tags=("backtest", "model"),
+    )
+    def _walk_forward(inp: WalkForwardSignalIn, ctx: ToolContext) -> WalkForwardSignalOut:
+        if ctx.workspace is None:
+            raise ToolError("walk_forward_signal requires a workspace in ToolContext")
+        df = ctx.workspace.get(inp.input_artifact)
+        preds = run_walk_forward(
+            df,
+            feature_cols=inp.feature_columns,
+            target_col=inp.target_column,
+            mode=inp.mode,
+            train_lookback_days=inp.train_lookback_days,
+            refit_every_days=inp.refit_every_days,
+            test_window_days=inp.test_window_days,
+            min_train_size=inp.min_train_size,
+            target_horizon_days=inp.target_horizon_days,
+            model_kind=inp.model_kind,
+            passthrough_columns=inp.passthrough_columns,
+        )
+        ctx.workspace.put(inp.output_artifact, preds)
+        n_folds = int(preds["fold_id"].nunique()) if "fold_id" in preds.columns and len(preds) else 0
+        return WalkForwardSignalOut(
+            output_artifact=inp.output_artifact,
+            n_rows=int(len(preds)),
+            n_folds=n_folds,
         )
 
     @registry.tool(

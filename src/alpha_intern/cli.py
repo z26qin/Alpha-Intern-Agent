@@ -119,6 +119,9 @@ def agent(
     run_log_path: Optional[Path] = typer.Option(
         None, "--run-log", help="Path to write the JSONL run log (default: data_dir/run.jsonl)."
     ),
+    reflect: bool = typer.Option(
+        False, "--reflect", help="After the run, ask the model to reflect on the trace and save a 'lesson' memory."
+    ),
 ) -> None:
     """Run the LLM agent on a research goal. Requires ANTHROPIC_API_KEY."""
     from alpha_intern.agent.loop import run_agent
@@ -154,6 +157,7 @@ def agent(
             max_tokens=max_tokens,
             memory_query=memory_query,
             memory_ticker=memory_ticker,
+            reflect_at_end=reflect,
         )
 
     typer.echo("")
@@ -169,6 +173,27 @@ def agent(
     typer.echo("")
     typer.echo("Final message:")
     typer.echo(result.final_text or "(no text)")
+
+    if result.reflection is not None:
+        ref = result.reflection
+        typer.echo("")
+        typer.echo("Reflection:")
+        typer.echo(f"  memory_id: {ref.memory_id or '(not saved)'}")
+        if ref.parse_error:
+            typer.echo(f"  parse_error: {ref.parse_error}")
+        typer.echo(f"  summary: {ref.payload.summary or '(empty)'}")
+        if ref.payload.what_worked:
+            typer.echo("  what_worked:")
+            for item in ref.payload.what_worked:
+                typer.echo(f"    - {item}")
+        if ref.payload.what_failed:
+            typer.echo("  what_failed:")
+            for item in ref.payload.what_failed:
+                typer.echo(f"    - {item}")
+        if ref.payload.recommendations:
+            typer.echo("  recommendations:")
+            for item in ref.payload.recommendations:
+                typer.echo(f"    - {item}")
 
 
 if __name__ == "__main__":  # pragma: no cover

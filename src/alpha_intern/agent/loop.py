@@ -34,6 +34,7 @@ class AgentResult:
     messages: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
+    reflection: Optional[Any] = None  # alpha_intern.agent.reflection.ReflectionResult
 
 
 def _tools_for_provider(registry: ToolRegistry) -> list[dict[str, Any]]:
@@ -86,6 +87,9 @@ def run_agent(
     memory_tags: Optional[list[str]] = None,
     system_prompt: Optional[str] = None,
     assembled: Optional[AssembledContext] = None,
+    reflect_at_end: bool = False,
+    reflection_provider: Optional[LLMProvider] = None,
+    reflection_max_tokens: int = 1024,
 ) -> AgentResult:
     """Run a single agent session and return the result."""
     if max_steps < 1:
@@ -193,6 +197,37 @@ def run_agent(
             error=error,
         )
 
+    reflection_result = None
+    if reflect_at_end:
+        from alpha_intern.agent.reflection import reflect_on_run
+
+        reflect_provider = reflection_provider or provider
+        try:
+            entries = (
+                ctx.run_log.current_run_entries() if ctx.run_log is not None else []
+            )
+            reflection_result = reflect_on_run(
+                provider=reflect_provider,
+                entries=entries,
+                goal=goal,
+                memory=ctx.memory,
+                max_tokens=reflection_max_tokens,
+            )
+            if ctx.run_log is not None:
+                ctx.run_log.log_event(
+                    "note",
+                    content=f"reflection memory_id={reflection_result.memory_id} "
+                    f"parse_error={reflection_result.parse_error}",
+                    source="reflection",
+                )
+        except Exception as exc:
+            if ctx.run_log is not None:
+                ctx.run_log.log_event(
+                    "note",
+                    content=f"reflection failed: {type(exc).__name__}: {exc}",
+                    source="reflection",
+                )
+
     return AgentResult(
         run_id=getattr(ctx.run_log, "run_id", None),
         final_text=final_text,
@@ -201,4 +236,5 @@ def run_agent(
         messages=messages,
         tool_calls=tool_call_records,
         error=error,
+        reflection=reflection_result,
     )
