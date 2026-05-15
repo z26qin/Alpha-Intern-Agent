@@ -192,6 +192,23 @@ def agent(
     typer.echo("Final message:")
     typer.echo(result.final_text or "(no text)")
 
+    # Write a run card so meta-reflect can learn from this run.
+    from alpha_intern.agent.cards import build_card, write_card
+
+    lessons_for_card: list[str] = []
+    if result.reflection is not None:
+        lessons_for_card = list(result.reflection.payload.recommendations or [])
+    card = build_card(
+        run_id=result.run_id or "unknown",
+        goal=goal,
+        final_text=result.final_text,
+        stopped_reason=result.stopped_reason,
+        steps_used=result.steps_used,
+        tool_calls=result.tool_calls,
+        lessons=lessons_for_card,
+    )
+    write_card(card, settings.data_dir)
+
     if result.reflection is not None:
         ref = result.reflection
         typer.echo("")
@@ -212,6 +229,135 @@ def agent(
             typer.echo("  recommendations:")
             for item in ref.payload.recommendations:
                 typer.echo(f"    - {item}")
+
+
+@app.command("backlog-list")
+def backlog_list() -> None:
+    """Show pending research hypotheses."""
+    from alpha_intern.agent.backlog import read_backlog
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    items = read_backlog(settings.data_dir)
+    if not items:
+        typer.echo("(backlog is empty — add items with `alpha-intern backlog-add`)")
+        return
+    for i, it in enumerate(items, 1):
+        suffix = f" (tried {it.tried})" if it.tried else ""
+        typer.echo(f"{i:>3}. {it.text}{suffix}")
+
+
+@app.command("backlog-add")
+def backlog_add(hypothesis: str = typer.Argument(..., help="One hypothesis to investigate.")) -> None:
+    """Append a hypothesis to the backlog."""
+    from alpha_intern.agent.backlog import append_backlog
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    append_backlog(hypothesis, settings.data_dir)
+    typer.echo(f"Added: {hypothesis}")
+
+
+@app.command("research")
+def research(
+    max_steps: int = typer.Option(8, "--max-steps"),
+    max_tokens: int = typer.Option(4096, "--max-tokens"),
+    model: Optional[str] = typer.Option(None, "--model"),
+) -> None:
+    """Pop the top backlog hypothesis, run the agent on it, write a run card."""
+    from alpha_intern.agent.auto import run_auto_turn
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    run_log_path = settings.data_dir / "run.jsonl"
+
+    # Force a research turn by seeding state so the chooser picks it.
+    res = run_auto_turn(
+        data_dir=settings.data_dir,
+        run_log_path=run_log_path,
+        daily_budget_usd=1e9,  # explicit single-shot — no budget gate
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        model=model,
+    )
+    typer.echo(f"[{res.action}] {res.detail}")
+    if res.card_path:
+        typer.echo(f"card: {res.card_path}")
+
+
+@app.command("meta-reflect")
+def meta_reflect_cmd(
+    model: Optional[str] = typer.Option(None, "--model"),
+    n_cards: int = typer.Option(12, "--n-cards"),
+    max_tokens: int = typer.Option(1024, "--max-tokens"),
+) -> None:
+    """Read recent run cards, propose new lessons/skills/hypotheses."""
+    from alpha_intern.agent.meta_reflect import meta_reflect
+    from alpha_intern.agent.provider import DEFAULT_MODEL, AnthropicProvider
+    from alpha_intern.agent.run_log import RunLog
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    run_log_path = settings.data_dir / "run.jsonl"
+
+    provider = AnthropicProvider(model=model or DEFAULT_MODEL)
+    memory = _store()
+    skills = _skills()
+
+    with RunLog(run_log_path) as log:
+        class _LP:
+            def __init__(self, inner, log):
+                self._inner = inner; self._log = log
+            def generate(self, system, messages, tools, max_tokens=4096):
+                import time as _t
+                t0 = _t.monotonic()
+                r = self._inner.generate(system, messages, tools, max_tokens)
+                if r.usage:
+                    self._log.log_llm_call(model=r.model or "", usage=r.usage,
+                                           step=1, duration_s=_t.monotonic()-t0,
+                                           stop_reason=r.stop_reason)
+                return r
+
+        res = meta_reflect(
+            provider=_LP(provider, log),
+            memory=memory,
+            skills=skills,
+            data_dir=settings.data_dir,
+            n_cards=n_cards,
+            max_tokens=max_tokens,
+        )
+
+    typer.echo(f"patterns ({len(res.payload.patterns)}):")
+    for p in res.payload.patterns:
+        typer.echo(f"  - {p}")
+    typer.echo(f"lessons added: {len(res.written_memory_ids)}")
+    typer.echo(f"skills added: {len(res.written_skill_names)}")
+    typer.echo(f"hypotheses appended: {len(res.appended_hypotheses)}")
+    if res.parse_error:
+        typer.echo(f"parse_error: {res.parse_error}")
+
+
+@app.command("auto")
+def auto(
+    budget: float = typer.Option(1.0, "--budget", help="Daily USD budget (default $1.00)."),
+    max_steps: int = typer.Option(8, "--max-steps"),
+    max_tokens: int = typer.Option(4096, "--max-tokens"),
+    model: Optional[str] = typer.Option(None, "--model"),
+) -> None:
+    """One autonomous tick (research or meta-reflect). Designed for launchd/cron."""
+    from alpha_intern.agent.auto import run_auto_turn
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    res = run_auto_turn(
+        data_dir=settings.data_dir,
+        run_log_path=settings.data_dir / "run.jsonl",
+        daily_budget_usd=budget,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        model=model,
+    )
+    typer.echo(f"[{res.action}] {res.detail}  (today: ${res.cost_today_usd:.4f})")
 
 
 @app.command("usage")
@@ -312,6 +458,22 @@ def chat(
             except Exception as exc:  # keep REPL alive
                 typer.echo(f"[turn {turn}] error: {type(exc).__name__}: {exc}")
                 continue
+
+            from alpha_intern.agent.cards import build_card, write_card
+
+            lessons: list[str] = []
+            if result.reflection is not None:
+                lessons = list(result.reflection.payload.recommendations or [])
+            card = build_card(
+                run_id=result.run_id or "unknown",
+                goal=goal,
+                final_text=result.final_text,
+                stopped_reason=result.stopped_reason,
+                steps_used=result.steps_used,
+                tool_calls=result.tool_calls,
+                lessons=lessons,
+            )
+            write_card(card, settings.data_dir)
 
             typer.echo("")
             typer.echo(result.final_text or "(no text)")

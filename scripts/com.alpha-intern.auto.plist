@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.alpha-intern.auto</string>
+
+  <!-- Edit these two paths to match your install. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/REPLACE_ME/Alpha-Intern-Agent/.venv/bin/alpha-intern</string>
+    <string>auto</string>
+    <string>--budget</string>
+    <string>1.0</string>
+    <string>--max-steps</string>
+    <string>10</string>
+  </array>
+
+  <!-- Pick up ANTHROPIC_API_KEY from the user's shell. Replace as needed. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>ANTHROPIC_API_KEY</key>
+    <string>REPLACE_WITH_KEY_OR_DELETE_AND_USE_LAUNCHCTL_SETENV</string>
+    <key>ALPHA_INTERN_DATA_DIR</key>
+    <string>/Users/REPLACE_ME/Alpha-Intern-Agent/.alpha_intern</string>
+  </dict>
+
+  <!-- Fire every 3 hours (10800 seconds). launchd will run the next
+       tick a soon as the laptop wakes if it missed one while asleep. -->
+  <key>StartInterval</key>
+  <integer>10800</integer>
+
+  <!-- Logs. Tail with `tail -f` to debug. -->
+  <key>StandardOutPath</key>
+  <string>/Users/REPLACE_ME/Library/Logs/alpha-intern.auto.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/REPLACE_ME/Library/Logs/alpha-intern.auto.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

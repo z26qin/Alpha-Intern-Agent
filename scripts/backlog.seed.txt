@@ -1,0 +1,13 @@
+# Seed hypotheses for AlphaInternAgent autonomous research.
+# Copy or append into <data_dir>/backlog.txt.
+# Each non-comment line is one hypothesis the agent will investigate.
+On the 25-name AI-bottleneck basket (NVDA AMD AVGO MRVL MU TSM ASML AMAT LRCX KLAC TER ANET COHR LITE FN CIEN VRT ETN GEV MOD SMCI PWR INTC QCOM TXN) 2022-01-01 to today: run a walk-forward ridge with 5d forward target. Report Sharpe, vol, max drawdown vs equal-weight long-only.
+Compute the mean cross-sectional rank IC between return_5d and target_return_5d_forward on the AI-bottleneck basket. Is it meaningfully > 0?
+Compare top/bottom 20% vs 30% vs 40% quantile splits on the AI-bottleneck basket. Does narrower selection raise Sharpe enough to overcome higher turnover cost?
+Run the same walk-forward ridge on 11 SPDR sector ETFs (XLK XLF XLE XLV XLY XLP XLI XLB XLU XLRE XLC) 2018-2024. Compare metrics to the AI-bottleneck basket.
+Does adding volume_zscore_20d to the feature set raise OOS Sharpe versus a returns-only set on the AI-bottleneck basket?
+On the AI-bottleneck basket: is 12-1 cross-sectional momentum (use return_20d as proxy) profitable, or is short-horizon reversal better?
+Backtest equal-weight long-only of the AI-bottleneck basket 2022-2024 as a benchmark. Report Sharpe, vol, max drawdown.
+Compare random-forest vs ridge model on the AI-bottleneck basket with the standard feature set. Which generalizes better OOS?
+On the AI-bottleneck basket: report which feature has the highest mean cross-sectional IC. Is any single feature carrying the signal?
+On the AI-bottleneck basket: backtest with 0 bps vs 5 bps vs 20 bps cost. How sensitive is Sharpe to transaction cost?
