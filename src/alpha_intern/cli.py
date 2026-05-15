@@ -122,6 +122,14 @@ def agent(
     reflect: bool = typer.Option(
         False, "--reflect", help="After the run, ask the model to reflect on the trace and save a 'lesson' memory."
     ),
+    seed_synthetic: bool = typer.Option(
+        False,
+        "--seed-synthetic",
+        help=(
+            "Before the agent runs, populate the workspace with a deterministic "
+            "synthetic OHLCV panel saved under 'prices_raw' (handy first-run demo)."
+        ),
+    ),
 ) -> None:
     """Run the LLM agent on a research goal. Requires ANTHROPIC_API_KEY."""
     from alpha_intern.agent.loop import run_agent
@@ -148,6 +156,16 @@ def agent(
             skills=skills,
             run_log=log,
         )
+        if seed_synthetic:
+            seed_out = registry.dispatch(
+                "load_synthetic_prices",
+                inputs={"output_artifact": "prices_raw"},
+                ctx=ctx,
+            )
+            typer.echo(
+                f"Seeded workspace with synthetic prices: "
+                f"{seed_out.n_rows} rows, {seed_out.n_tickers} tickers"
+            )
         result = run_agent(
             goal=goal,
             provider=provider,
