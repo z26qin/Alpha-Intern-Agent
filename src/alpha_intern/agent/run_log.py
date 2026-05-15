@@ -26,6 +26,7 @@ StepType = Literal[
     "provider_error",
     "observation",
     "note",
+    "llm_call",
 ]
 
 
@@ -123,6 +124,22 @@ class RunLog:
             error=error,
             duration_s=duration_s,
             metadata=metadata,
+        )
+        return self.append(entry)
+
+    def log_llm_call(
+        self,
+        model: str,
+        usage: dict[str, int],
+        step: int,
+        duration_s: Optional[float] = None,
+        **metadata: Any,
+    ) -> RunLogEntry:
+        entry = RunLogEntry(
+            run_id=self.run_id,
+            step_type="llm_call",
+            duration_s=duration_s,
+            metadata={"model": model, "usage": dict(usage), "step": step, **metadata},
         )
         return self.append(entry)
 

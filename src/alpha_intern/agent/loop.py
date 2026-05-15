@@ -129,6 +129,9 @@ def run_agent(
 
     for step_idx in range(max_steps):
         steps_used = step_idx + 1
+        import time as _time
+
+        t0 = _time.monotonic()
         try:
             response = provider.generate(
                 system=assembled.system,
@@ -142,6 +145,15 @@ def run_agent(
             if ctx.run_log is not None:
                 ctx.run_log.log_event("provider_error", error=error)
             break
+
+        if ctx.run_log is not None and response.usage:
+            ctx.run_log.log_llm_call(
+                model=response.model or "",
+                usage=response.usage,
+                step=steps_used,
+                duration_s=_time.monotonic() - t0,
+                stop_reason=response.stop_reason,
+            )
 
         messages.append({"role": "assistant", "content": _assistant_content(response)})
 

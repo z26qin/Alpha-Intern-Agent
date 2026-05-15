@@ -214,6 +214,35 @@ def agent(
                 typer.echo(f"    - {item}")
 
 
+@app.command("usage")
+def usage(
+    run_log_path: Optional[Path] = typer.Option(
+        None, "--run-log", help="JSONL run log to read (default: data_dir/run.jsonl)."
+    ),
+    last: Optional[int] = typer.Option(
+        None, "--last", help="Show only the N most recent runs."
+    ),
+    run_id: Optional[str] = typer.Option(
+        None, "--run-id", help="Filter to a single run_id."
+    ),
+) -> None:
+    """Summarize Claude API token usage and estimated cost per run."""
+    from alpha_intern.agent.usage import render_table, summarize_runs
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    path = run_log_path or (settings.data_dir / "run.jsonl")
+
+    rows = summarize_runs(path)
+    if run_id is not None:
+        rows = [r for r in rows if r.run_id == run_id]
+    if last is not None and last > 0:
+        rows = rows[-last:]
+
+    typer.echo(f"Run log: {path}")
+    typer.echo(render_table(rows))
+
+
 @app.command("chat")
 def chat(
     max_steps: int = typer.Option(8, "--max-steps"),

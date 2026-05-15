@@ -37,6 +37,8 @@ class LLMResponse:
     tool_uses: list[ToolUse] = field(default_factory=list)
     stop_reason: str = "end_turn"
     raw: Any = None
+    model: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -105,11 +107,26 @@ class AnthropicProvider:
                     )
                 )
 
+        usage: dict[str, int] = {}
+        raw_usage = getattr(resp, "usage", None)
+        if raw_usage is not None:
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            ):
+                val = getattr(raw_usage, key, None)
+                if isinstance(val, int):
+                    usage[key] = val
+
         return LLMResponse(
             text="\n".join(p for p in text_parts if p),
             tool_uses=tool_uses,
             stop_reason=getattr(resp, "stop_reason", None) or "end_turn",
             raw=resp,
+            model=getattr(resp, "model", self.model) or self.model,
+            usage=usage,
         )
 
 
