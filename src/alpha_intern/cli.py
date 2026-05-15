@@ -214,5 +214,86 @@ def agent(
                 typer.echo(f"    - {item}")
 
 
+@app.command("chat")
+def chat(
+    max_steps: int = typer.Option(8, "--max-steps"),
+    max_tokens: int = typer.Option(4096, "--max-tokens"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    reflect: bool = typer.Option(False, "--reflect", help="Reflect after each turn."),
+    seed_synthetic: bool = typer.Option(
+        False, "--seed-synthetic", help="Seed workspace with synthetic prices at startup."
+    ),
+) -> None:
+    """Interactive REPL. Type a research goal at each prompt; workspace, memory,
+    and skills persist across turns. Type 'exit' or Ctrl-D to quit."""
+    from alpha_intern.agent.loop import run_agent
+    from alpha_intern.agent.provider import DEFAULT_MODEL, AnthropicProvider
+    from alpha_intern.agent.run_log import RunLog
+    from alpha_intern.tools import Workspace, get_default_registry
+    from alpha_intern.tools.registry import ToolContext
+
+    settings = get_settings()
+    settings.ensure_dirs()
+
+    provider = AnthropicProvider(model=model or DEFAULT_MODEL)
+    registry = get_default_registry()
+    workspace = Workspace()
+    memory = ResearchMemoryStore(settings.memory_path)
+    skills = SkillRegistry(settings.skills_path)
+    log_path = settings.data_dir / "run.jsonl"
+
+    typer.echo("Alpha Intern chat. Workspace persists across turns. Type 'exit' to quit.")
+
+    with RunLog(log_path) as log:
+        ctx = ToolContext(workspace=workspace, memory=memory, skills=skills, run_log=log)
+
+        if seed_synthetic:
+            seed_out = registry.dispatch(
+                "load_synthetic_prices",
+                inputs={"output_artifact": "prices_raw"},
+                ctx=ctx,
+            )
+            typer.echo(
+                f"Seeded synthetic prices: {seed_out.n_rows} rows, {seed_out.n_tickers} tickers"
+            )
+
+        turn = 0
+        while True:
+            try:
+                goal = typer.prompt("\n>", prompt_suffix=" ").strip()
+            except (EOFError, KeyboardInterrupt):
+                typer.echo("")
+                break
+            if not goal:
+                continue
+            if goal.lower() in {"exit", "quit", ":q"}:
+                break
+
+            turn += 1
+            try:
+                result = run_agent(
+                    goal=goal,
+                    provider=provider,
+                    registry=registry,
+                    ctx=ctx,
+                    max_steps=max_steps,
+                    max_tokens=max_tokens,
+                    reflect_at_end=reflect,
+                )
+            except Exception as exc:  # keep REPL alive
+                typer.echo(f"[turn {turn}] error: {type(exc).__name__}: {exc}")
+                continue
+
+            typer.echo("")
+            typer.echo(result.final_text or "(no text)")
+            tools_summary = ", ".join(tc["tool"] for tc in result.tool_calls) or "none"
+            typer.echo(
+                f"\n[turn {turn} · steps {result.steps_used} · "
+                f"stop {result.stopped_reason} · tools: {tools_summary}]"
+            )
+
+    typer.echo("bye.")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
