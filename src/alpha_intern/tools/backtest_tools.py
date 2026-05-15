@@ -27,8 +27,21 @@ from alpha_intern.tools.registry import (
 
 class RunRankBacktestIn(ToolInput):
     input_artifact: str = Field(..., description="Workspace name of a DataFrame with signal + forward return columns.")
-    signal_column: str = Field(..., description="Signal column to rank stocks by on each date.")
-    forward_return_column: str = Field(..., description="Forward-return column used to score the rank portfolio.")
+    signal_column: str = Field(
+        default="signal",
+        description=(
+            "Signal column to rank stocks by on each date. Defaults to 'signal', "
+            "which is what both walk_forward_signal and predict_signal emit."
+        ),
+    )
+    forward_return_column: str = Field(
+        default="target_return_5d_forward",
+        description=(
+            "Forward-return column used to score the rank portfolio. Defaults to "
+            "'target_return_5d_forward' (build_features' standard target). Pass "
+            "this column via walk_forward_signal's passthrough_columns."
+        ),
+    )
     top_quantile: float = Field(default=0.2, gt=0.0, lt=1.0)
     bottom_quantile: float = Field(default=0.2, gt=0.0, lt=1.0)
     cost_bps: float = Field(default=0.0, ge=0.0)
