@@ -1,4 +1,4 @@
-# AlphaInternAgent
+# Alpha Intern Agent
 
 > Your tireless (and slightly nervous) quant research intern.
 
