@@ -196,6 +196,22 @@ def test_extra_spec_overrides_default_for_same_source_column() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+def test_missing_date_column_raises() -> None:
+    feats = _featurized_panel().drop(columns=["date"])
+    with pytest.raises(ValueError, match="'date'"):
+        build_cross_sectional_features(feats)
+
+
+def test_missing_ticker_column_raises() -> None:
+    feats = _featurized_panel().drop(columns=["ticker"])
+    with pytest.raises(ValueError, match="'ticker'"):
+        build_cross_sectional_features(feats)
+
+
+# ---------------------------------------------------------------------------
 # Sorting / determinism
 # ---------------------------------------------------------------------------
 

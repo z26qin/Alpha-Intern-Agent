@@ -13,6 +13,7 @@ from alpha_intern.features.cross_sectional import (
     CS_FEATURE_COLUMNS,
     CrossSectionalSpec,
     build_cross_sectional_features,
+    get_registered_specs,
 )
 from alpha_intern.tools.registry import (
     ToolContext,
@@ -112,9 +113,11 @@ def register(registry: ToolRegistry) -> None:
         ]
         enriched = build_cross_sectional_features(feats, extra_specs=extra_specs)
         ctx.workspace.put(inp.output_artifact, enriched)
-        all_cs_cols = list(CS_FEATURE_COLUMNS) + [
-            c for spec in extra_specs for c in spec.output_columns
-        ]
+        all_cs_cols = (
+            list(CS_FEATURE_COLUMNS)
+            + [c for spec in get_registered_specs() for c in spec.output_columns]
+            + [c for spec in extra_specs for c in spec.output_columns]
+        )
         return BuildCrossSectionalOut(
             output_artifact=inp.output_artifact,
             n_rows=int(len(enriched)),

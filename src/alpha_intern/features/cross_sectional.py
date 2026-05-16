@@ -18,7 +18,7 @@ The new column will be picked up automatically on the next call.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
@@ -106,7 +106,7 @@ CS_FEATURE_COLUMNS: tuple[str, ...] = tuple(
 # ---------------------------------------------------------------------------
 
 def _apply_spec(group: pd.DataFrame, spec: CrossSectionalSpec) -> pd.DataFrame:
-    """Apply one spec to a single date-group (modifies in place)."""
+    """Apply one spec to a single date-group; mutates and returns the group."""
     col = spec.source_column
     if col not in group.columns:
         return group
@@ -152,6 +152,12 @@ def build_cross_sectional_features(
     Cross-sectional statistics are computed *within each date*, so at least two
     tickers are needed for meaningful ranks/z-scores.
     """
+    for required in ("date", "ticker"):
+        if required not in df.columns:
+            raise ValueError(
+                f"build_cross_sectional_features requires column: {required!r}"
+            )
+
     specs: list[CrossSectionalSpec] = _DEFAULT_SPECS + list(_REGISTRY) + list(extra_specs or [])
 
     # Deduplicate by source_column + flags (last registration wins for a given
